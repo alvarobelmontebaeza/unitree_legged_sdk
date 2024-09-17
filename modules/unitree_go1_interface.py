@@ -130,7 +130,7 @@ class UnitreeGo1Interface:
         # [FL_0, FR_0, RL_0, RR_0, FL_1, FR_1, RL_1, RR_1, FL_2, FR_2, RL_2, RR_2]
         action_dict = {}
         # Convert action tensor to array
-        action = action.detach().numpy().squeeze()
+        action = action.cpu().detach().numpy().squeeze()
 
         # Reorder the joint commands
         action_dict['FR_0'] = action[1]

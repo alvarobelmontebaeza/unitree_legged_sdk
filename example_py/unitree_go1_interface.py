@@ -74,13 +74,12 @@ class UnitreeGo1Interface:
         self.device = device
 
         # Buffers to store previous observations and actions
-        self.last_obs = None
         self.last_action = torch.zeros(12, device=self.device)
 
         # Create command and state objects
         self.cmd = sdk.LowCmd()
         self.state = sdk.HighState() # High state allows access to both joint-level values and body-level info
-        
+        self._low_state = sdk.LowState() # Used only for safety module
         # Initialize connection to the robot
         print("Initializing UDP connection to the robot...")
         self._IP = "192.168.123.10"
@@ -94,8 +93,8 @@ class UnitreeGo1Interface:
     def _get_relative_joint_positions(self):
         # Compute relative joint position vector from robot state provided by the SDK
         joint_pos_rel = []
-        for idx in self._jointIdx.values():
-            joint_pos_rel.append(self.state.motorState[idx].q - self.default_joint_pos[idx])
+        for joint, idx in self._jointIdx.items():
+            joint_pos_rel.append(self.state.motorState[idx].q - self.default_joint_pos[joint])
         
         return joint_pos_rel
     
@@ -120,6 +119,8 @@ class UnitreeGo1Interface:
         # Update robot state via UDP
         self.udp.Recv()
         self.udp.GetRecv(self.state)
+        self.udp.Recv()
+        self.udp.GetRecv(self._low_state)
 
     def _parse_action(self, action):
         # Parse the action tensor to reorder the joint commands in order to match the SDK's expected format
@@ -127,24 +128,25 @@ class UnitreeGo1Interface:
         # [FR_0, FR_1, FR_2, FL_0, FL_1, FL_2, RR_0, RR_1, RR_2, RL_0, RL_1, RL_2]
         # But IsaacLab's policy outputs the joint commands in the following order:
         # [FL_0, FR_0, RL_0, RR_0, FL_1, FR_1, RL_1, RR_1, FL_2, FR_2, RL_2, RR_2]
-        self.action_dict = {}
-
+        action_dict = {}
         # Convert action tensor to array
         action = action.detach().numpy().squeeze()
 
         # Reorder the joint commands
-        self.action_dict['FR_0'] = action[1]
-        self.action_dict['FR_1'] = action[5]
-        self.action_dict['FR_2'] = action[9]
-        self.action_dict['FL_0'] = action[0]
-        self.action_dict['FL_1'] = action[4]
-        self.action_dict['FL_2'] = action[8]
-        self.action_dict['RR_0'] = action[3]
-        self.action_dict['RR_1'] = action[7]
-        self.action_dict['RR_2'] = action[11]
-        self.action_dict['RL_0'] = action[2]
-        self.action_dict['RL_1'] = action[6]
-        self.action_dict['RL_2'] = action[10]
+        action_dict['FR_0'] = action[1]
+        action_dict['FR_1'] = action[5]
+        action_dict['FR_2'] = action[9]
+        action_dict['FL_0'] = action[0]
+        action_dict['FL_1'] = action[4]
+        action_dict['FL_2'] = action[8]
+        action_dict['RR_0'] = action[3]
+        action_dict['RR_1'] = action[7]
+        action_dict['RR_2'] = action[11]
+        action_dict['RL_0'] = action[2]
+        action_dict['RL_1'] = action[6]
+        action_dict['RL_2'] = action[10]
+
+        return action_dict
 
             
 
@@ -174,7 +176,7 @@ class UnitreeGo1Interface:
         # Base angular velocity
         base_ang_vel = torch.tensor(self.state.imu.gyroscope, device=self.device).reshape(1, 3)
         # Base projected gravity vector
-        projected_gravity = self._compute_projected_gravity() # Already returns staa tensor
+        projected_gravity = self._compute_projected_gravity() # Already returns a tensor
         # Target velocity commands
         velocity_command = torch.tensor(self.velocity_target, device=self.device).reshape(1, 3)
         # Relative joint positions wrt default
@@ -182,7 +184,7 @@ class UnitreeGo1Interface:
         # Relative joint velocities wrt default
         joint_vel_rel = torch.tensor(self._get_relative_joint_velocities(), device=self.device).reshape(1, 12)
         # Previous action
-        last_action = torch.tensor(self.last_action, device=self.device).reshape(1, 12)
+        last_action = self.last_action.reshape(1, 12)
 
         # Concatenate all observations
         self.last_obs = torch.cat([
@@ -193,7 +195,7 @@ class UnitreeGo1Interface:
             joint_pos_rel,
             joint_vel_rel,
             last_action
-        ], device=self.device)
+        ], dim=1)
 
         return self.last_obs
 
@@ -243,7 +245,7 @@ class UnitreeGo1Interface:
         if power_limit < 1 or power_limit > 10:
             raise ValueError("Power limit must be between 1 and 10")
         
-        self._safe.PowerProtect(self.cmd, self.state, power_limit)
+        self._safe.PowerProtect(self.cmd, self._low_state, power_limit)
 
 if __name__ == '__main__':
     '''
@@ -268,14 +270,14 @@ if __name__ == '__main__':
         # Set dt
         time.sleep(go1_interface.dt)
         motiontime += 1
-        
+        print(motiontime)
         # Receive robot's current state
         obs = go1_interface.compute_observation()
         
         # Only access after first iteration so that the robot is initialized
         if( motiontime >= 0):
             # Get the action from the policy
-            action = torch.zeros(12, device=go1_interface.device) # Dummy action. Replace this with the action from the policy
+            action = torch.zeros(size=(1,12), device=go1_interface.device) # Dummy action. Replace this with the action from the policy
             go1_interface.set_action(action)
 
         if(motiontime > 10):

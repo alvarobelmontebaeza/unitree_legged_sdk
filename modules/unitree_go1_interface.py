@@ -74,7 +74,7 @@ class UnitreeGo1Interface:
         self.device = device
 
         # Buffers to store previous observations and actions
-        self.last_action = torch.zeros(12, device=self.device)
+        self.last_action = torch.zeros(12, dtype=torch.float, device=self.device)
 
         # Create command and state objects
         self.cmd = sdk.LowCmd()
@@ -113,7 +113,7 @@ class UnitreeGo1Interface:
         orientation = torch.tensor(self.state.imu.quaternion, device=self.device).reshape(1, 4)
         projected_gravity = quat_rotate_inverse(orientation, gravity)
 
-        return projected_gravity.reshape(1, 3)
+        return projected_gravity.float().reshape(1, 3)
     
     def _update_robot_state(self):
         # Update robot state via UDP
@@ -172,17 +172,17 @@ class UnitreeGo1Interface:
         self._update_robot_state()
 
         # Base linear velocity
-        base_lin_vel = torch.tensor(self.state.velocity, device=self.device).reshape(1, 3)
+        base_lin_vel = torch.tensor(self.state.velocity, dtype=torch.float, device=self.device).reshape(1, 3)
         # Base angular velocity
-        base_ang_vel = torch.tensor(self.state.imu.gyroscope, device=self.device).reshape(1, 3)
+        base_ang_vel = torch.tensor(self.state.imu.gyroscope, dtype=torch.float, device=self.device).reshape(1, 3)
         # Base projected gravity vector
         projected_gravity = self._compute_projected_gravity() # Already returns a tensor
         # Target velocity commands
-        velocity_command = torch.tensor(self.velocity_target, device=self.device).reshape(1, 3)
+        velocity_command = torch.tensor(self.velocity_target, dtype=torch.float, device=self.device).reshape(1, 3)
         # Relative joint positions wrt default
-        joint_pos_rel = torch.tensor(self._get_relative_joint_positions(), device=self.device).reshape(1, 12)        
+        joint_pos_rel = torch.tensor(self._get_relative_joint_positions(), dtype=torch.float, device=self.device).reshape(1, 12)        
         # Relative joint velocities wrt default
-        joint_vel_rel = torch.tensor(self._get_relative_joint_velocities(), device=self.device).reshape(1, 12)
+        joint_vel_rel = torch.tensor(self._get_relative_joint_velocities(), dtype=torch.float, device=self.device).reshape(1, 12)
         # Previous action
         last_action = self.last_action.reshape(1, 12)
 

@@ -9,11 +9,13 @@ import argparse
 parser = argparse.ArgumentParser(description='Test Policy')
 
 # Add arguments
-parser.add_argument('--device', type=str, default='cpu', help='Device to run the code (cpu/cuda)')
+parser.add_argument('--device', type=str, default='cuda', help='Device to run the code (cpu/cuda)')
 parser.add_argument('--model_path', type=str, required=True, help='Path to the trained model')
 
 # Parse the arguments
 args = parser.parse_args()
+if args.device == 'cuda' and not torch.cuda.is_available():
+    args.device = 'cpu'
 device = args.device
 model_path = args.model_path
 
@@ -25,7 +27,8 @@ go1_interface = UnitreeGo1Interface(
 )
 
 # Load the trained model
-policy = torch.load(args.model_path)
+policy = torch.jit.load(args.model_path)
+policy.to(device)
 
 # Set the model to evaluation mode
 policy.eval()

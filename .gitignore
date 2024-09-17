@@ -3,3 +3,6 @@ build
 *.o
 .vscode
 .clang-format
+
+# Ignore policies
+*.pt

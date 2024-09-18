@@ -34,6 +34,8 @@ def quat_rotate_inverse(q: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
 class UnitreeGo1Interface:
     def __init__(
             self,
+            action_scale=0.25,
+            action_offset=None,
             dt=0.002,
             max_base_vel=0.2,
             device='cpu',
@@ -64,8 +66,8 @@ class UnitreeGo1Interface:
         # Adjustable parameters
         self.dt = dt
         self.max_base_vel = max_base_vel
-        self.Kp = np.ones(12) * 5.0
-        self.Kd = np.ones(12) * 1.0
+        self.Kp = np.ones(12) * 20.0
+        self.Kd = np.ones(12) * 0.5
 
         # Target base velocity (Vx, Vy, Wz)
         self.velocity_target = [0.0, 0.0, 0.0]
@@ -75,6 +77,17 @@ class UnitreeGo1Interface:
 
         # Buffers to store previous observations and actions
         self.last_action = torch.zeros(12, dtype=torch.float, device=self.device)
+
+        # Retrieve parameters for action scaling
+        self._offset = torch.zeros(12, dtype=torch.float, device=self.device)
+        self._scale = action_scale
+        if action_offset is None:
+            joint_offsets = []
+            for offset in self.default_joint_pos.values():
+                joint_offsets.append(offset)
+            self._offset = torch.tensor(joint_offsets, dtype=torch.float, device=self.device)
+        else:
+            self._offset = torch.tensor(action_offset, dtype=torch.float, device=self.device)
 
         # Create command and state objects
         self.cmd = sdk.LowCmd()
@@ -94,7 +107,7 @@ class UnitreeGo1Interface:
         # Compute relative joint position vector from robot state provided by the SDK
         joint_pos_rel = []
         for joint, idx in self._jointIdx.items():
-            joint_pos_rel.append(self.state.motorState[idx].q - self.default_joint_pos[joint])
+            joint_pos_rel.append(self.state.motorState[idx].q) - self.default_joint_pos[joint]
         
         return joint_pos_rel
     
@@ -205,6 +218,8 @@ class UnitreeGo1Interface:
         
         :param action: The action tensor.
         """
+
+        self.processed_action = action * self._scale + self._offset
         # Parse the action tensor to match the SDK's expected format
         self.action_dict = self._parse_action(action)
 
@@ -214,7 +229,7 @@ class UnitreeGo1Interface:
             self.cmd.motorCmd[idx].dq = 0
             self.cmd.motorCmd[idx].Kp = self.Kp[idx]
             self.cmd.motorCmd[idx].Kd = self.Kd[idx]
-            self.cmd.motorCmd[idx].tau = 0.0
+            self.cmd.motorCmd[idx].tau = 0 # TODO: Add feedforward torque
 
         # Store the last action
         self.last_action = action
